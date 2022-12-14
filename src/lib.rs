@@ -12,12 +12,10 @@ pub fn drop_owned<T: OwnedDroppable>(val: T) -> DropOwned<T> {
 /// This trait has to be implemented for types that
 /// can be dropped ownedly.
 pub trait OwnedDroppable: Sized {
-
     /// This method is called once the `OwnedDrop`
     /// got dropped and provides the dropped instance to
     /// the implementor.
     fn drop_owned(self);
-
 }
 
 /// Once this type gets dropped, the contained value
@@ -27,7 +25,6 @@ pub struct DropOwned<T: OwnedDroppable> {
 }
 
 impl<T: OwnedDroppable> DropOwned<T> {
-
     /// Creates a new instance of `DropOwned` containing
     /// the passed `val`.
     #[inline]
@@ -36,7 +33,6 @@ impl<T: OwnedDroppable> DropOwned<T> {
             inner: MaybeUninit::new(val),
         }
     }
-
 }
 
 impl<T: OwnedDroppable> From<T> for DropOwned<T> {
