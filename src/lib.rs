@@ -1,6 +1,6 @@
-use std::mem;
-use std::mem::MaybeUninit;
-use std::ops::{Deref, DerefMut};
+use core::mem;
+use core::mem::MaybeUninit;
+use core::ops::{Deref, DerefMut};
 
 /// Creates a new instance of `DropOwned` containing
 /// the passed `val`.
