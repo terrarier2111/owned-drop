@@ -1,6 +1,5 @@
-use core::mem;
-use core::mem::MaybeUninit;
 use core::ops::{Deref, DerefMut};
+use std::mem::ManuallyDrop;
 
 /// Creates a new instance of `DropOwned` containing
 /// the passed `val`.
@@ -20,18 +19,14 @@ pub trait OwnedDroppable: Sized {
 
 /// Once this type gets dropped, the contained value
 /// is passed to the `drop_owned` function it has to implement.
-pub struct DropOwned<T: OwnedDroppable> {
-    inner: MaybeUninit<T>,
-}
+pub struct DropOwned<T: OwnedDroppable>(ManuallyDrop<T>);
 
 impl<T: OwnedDroppable> DropOwned<T> {
     /// Creates a new instance of `DropOwned` containing
     /// the passed `val`.
     #[inline]
     pub fn new(val: T) -> Self {
-        Self {
-            inner: MaybeUninit::new(val),
-        }
+        Self(ManuallyDrop::new(val))
     }
 }
 
@@ -45,32 +40,26 @@ impl<T: OwnedDroppable> From<T> for DropOwned<T> {
 impl<T: OwnedDroppable> Deref for DropOwned<T> {
     type Target = T;
 
-    #[inline(always)]
+    #[inline]
     fn deref(&self) -> &Self::Target {
-        // SAFETY: This is safe, as the only way for uninitialized data
-        // to be present in `inner` is when this struct gets dropped
-        // at which point `deref` can't ever possibly be called anymore.
-        unsafe { self.inner.assume_init_ref() }
+        self.0.deref()
     }
 }
 
 impl<T: OwnedDroppable> DerefMut for DropOwned<T> {
-    #[inline(always)]
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        // SAFETY: This is safe, as the only way for uninitialized data
-        // to be present in `inner` is when this struct gets dropped
-        // at which point `deref_mut` can't ever possibly be called anymore.
-        unsafe { self.inner.assume_init_mut() }
+        self.0.deref_mut()
     }
 }
 
 impl<T: OwnedDroppable> Drop for DropOwned<T> {
     #[inline]
     fn drop(&mut self) {
-        let owned = mem::replace(&mut self.inner, MaybeUninit::uninit());
-        // SAFETY: This is safe because the previous inner value has to be
-        // initialized because `DropOwnedMemCpy` can only be created with
-        // an initialized value.
-        unsafe { owned.assume_init() }.drop_owned();
+        // SAFETY: This is safe because we only ever read this instance once and
+        // that is here and we know that the location is valid for reads,
+        // initialized and aligned.
+        let owned = unsafe { ((&mut self.0) as *mut ManuallyDrop<T>).read() };
+        ManuallyDrop::into_inner(owned).drop_owned();
     }
 }
