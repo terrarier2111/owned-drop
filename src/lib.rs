@@ -1,5 +1,5 @@
+use core::mem::ManuallyDrop;
 use core::ops::{Deref, DerefMut};
-use std::mem::ManuallyDrop;
 
 /// Creates a new instance of `DropOwned` containing
 /// the passed `val`.
@@ -19,6 +19,29 @@ pub trait OwnedDroppable: Sized {
 
 /// Once this type gets dropped, the contained value
 /// is passed to the `drop_owned` function it has to implement.
+///
+/// # Example
+/// ```
+/// use owned_drop::{DropOwned, OwnedDroppable};
+///
+/// struct PushVec<'a, T> {
+///     elt: T,
+///     vec: &'a mut Vec<T>,
+/// }
+///
+/// impl<'a, T> OwnedDroppable for PushVec<'a, T> {
+///     fn drop_owned(self) {
+///         self.vec.push(self.elt)
+///     }
+/// }
+///
+/// let mut v = vec![];
+/// let mut x = DropOwned::new(PushVec{elt: Box::new(5), vec: &mut v});
+/// *x.elt = 10;
+/// drop(x);
+/// assert_eq!(v, vec![Box::new(10)])
+/// ```
+
 pub struct DropOwned<T: OwnedDroppable>(ManuallyDrop<T>);
 
 impl<T: OwnedDroppable> DropOwned<T> {
@@ -30,11 +53,36 @@ impl<T: OwnedDroppable> DropOwned<T> {
     }
 
     /// Consumes the `DropOwned` to produces its inner value
+    /// skipping its [`OwnedDroppable`] implementation
+    ///
+    /// # Example
+    /// ```
+    /// use owned_drop::{DropOwned, OwnedDroppable};
+    ///
+    /// struct PushVec<'a, T> {
+    ///     elt: T,
+    ///     vec: &'a mut Vec<T>,
+    /// }
+    ///
+    /// impl<'a, T> OwnedDroppable for PushVec<'a, T> {
+    ///     fn drop_owned(self) {
+    ///         self.vec.push(self.elt)
+    ///     }
+    /// }
+    ///
+    /// let mut v = vec![];
+    /// let mut x = DropOwned::new(PushVec{elt: Box::new(5), vec: &mut v});
+    /// *x.elt = 10;
+    /// let inner = DropOwned::into_inner(x);
+    /// assert_eq!(inner.elt, Box::new(10));
+    /// assert_eq!(v, vec![]);
+    /// ```
     #[inline]
-    pub fn into_inner(mut slot: Self) -> T {
-        // SAFETY this `ManuallyDrop` will never get used again since we took ownership of it
-        // and will now drop it
-        unsafe { ManuallyDrop::take(&mut slot.0) }
+    pub fn into_inner(slot: Self) -> T {
+        let mut manual_drop = ManuallyDrop::new(slot);
+        // SAFETY the inner `ManuallyDrop` will never get used again since put it in the outer
+        // `ManuallyDrop` which will cause use to forget it
+        unsafe { ManuallyDrop::take(&mut manual_drop.0) }
     }
 }
 
