@@ -4,7 +4,7 @@ use std::mem::ManuallyDrop;
 /// Creates a new instance of `DropOwned` containing
 /// the passed `val`.
 #[inline]
-pub fn drop_owned<T: OwnedDroppable>(val: T) -> DropOwned<T> {
+pub const fn drop_owned<T: OwnedDroppable>(val: T) -> DropOwned<T> {
     DropOwned::new(val)
 }
 
@@ -25,8 +25,16 @@ impl<T: OwnedDroppable> DropOwned<T> {
     /// Creates a new instance of `DropOwned` containing
     /// the passed `val`.
     #[inline]
-    pub fn new(val: T) -> Self {
+    pub const fn new(val: T) -> Self {
         Self(ManuallyDrop::new(val))
+    }
+
+    /// Consumes the `DropOwned` to produces its inner value
+    #[inline]
+    pub fn into_inner(mut slot: Self) -> T {
+        // SAFETY this `ManuallyDrop` will never get used again since we took ownership of it
+        // and will now drop it
+        unsafe { ManuallyDrop::take(&mut slot.0) }
     }
 }
 
@@ -56,10 +64,7 @@ impl<T: OwnedDroppable> DerefMut for DropOwned<T> {
 impl<T: OwnedDroppable> Drop for DropOwned<T> {
     #[inline]
     fn drop(&mut self) {
-        // SAFETY: This is safe because we only ever read this instance once and
-        // that is here and we know that the location is valid for reads,
-        // initialized and aligned.
-        let owned = unsafe { ((&mut self.0) as *mut ManuallyDrop<T>).read() };
-        ManuallyDrop::into_inner(owned).drop_owned();
+        // SAFETY this `ManuallyDrop` will never get used again since we are inside the destructor
+        unsafe { ManuallyDrop::take(&mut self.0) }.drop_owned();
     }
 }
