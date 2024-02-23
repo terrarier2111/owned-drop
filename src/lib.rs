@@ -80,8 +80,8 @@ impl<T: OwnedDroppable> DropOwned<T> {
     #[inline]
     pub fn into_inner(slot: Self) -> T {
         let mut manual_drop = ManuallyDrop::new(slot);
-        // SAFETY the inner `ManuallyDrop` will never get used again since put it in the outer
-        // `ManuallyDrop` which will cause use to forget it
+        // SAFETY the inner `ManuallyDrop` will never get used again since we put it in the outer
+        // `ManuallyDrop` which will cause us to forget it
         unsafe { ManuallyDrop::take(&mut manual_drop.0) }
     }
 }
