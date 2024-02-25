@@ -1,10 +1,10 @@
+use core::mem::ManuallyDrop;
 use core::ops::{Deref, DerefMut};
-use std::mem::ManuallyDrop;
 
 /// Creates a new instance of `DropOwned` containing
 /// the passed `val`.
 #[inline]
-pub fn drop_owned<T: OwnedDroppable>(val: T) -> DropOwned<T> {
+pub const fn drop_owned<T: OwnedDroppable>(val: T) -> DropOwned<T> {
     DropOwned::new(val)
 }
 
@@ -19,14 +19,70 @@ pub trait OwnedDroppable: Sized {
 
 /// Once this type gets dropped, the contained value
 /// is passed to the `drop_owned` function it has to implement.
+///
+/// # Example
+/// ```
+/// use owned_drop::{DropOwned, OwnedDroppable};
+///
+/// struct PushVec<'a, T> {
+///     elt: T,
+///     vec: &'a mut Vec<T>,
+/// }
+///
+/// impl<'a, T> OwnedDroppable for PushVec<'a, T> {
+///     fn drop_owned(self) {
+///         self.vec.push(self.elt)
+///     }
+/// }
+///
+/// let mut v = vec![];
+/// let mut x = DropOwned::new(PushVec{elt: Box::new(5), vec: &mut v});
+/// *x.elt = 10;
+/// drop(x);
+/// assert_eq!(v, vec![Box::new(10)])
+/// ```
+
 pub struct DropOwned<T: OwnedDroppable>(ManuallyDrop<T>);
 
 impl<T: OwnedDroppable> DropOwned<T> {
     /// Creates a new instance of `DropOwned` containing
     /// the passed `val`.
     #[inline]
-    pub fn new(val: T) -> Self {
+    pub const fn new(val: T) -> Self {
         Self(ManuallyDrop::new(val))
+    }
+
+    /// Consumes the `DropOwned` to produces its inner value
+    /// skipping its [`OwnedDroppable`] implementation
+    ///
+    /// # Example
+    /// ```
+    /// use owned_drop::{DropOwned, OwnedDroppable};
+    ///
+    /// struct PushVec<'a, T> {
+    ///     elt: T,
+    ///     vec: &'a mut Vec<T>,
+    /// }
+    ///
+    /// impl<'a, T> OwnedDroppable for PushVec<'a, T> {
+    ///     fn drop_owned(self) {
+    ///         self.vec.push(self.elt)
+    ///     }
+    /// }
+    ///
+    /// let mut v = vec![];
+    /// let mut x = DropOwned::new(PushVec{elt: Box::new(5), vec: &mut v});
+    /// *x.elt = 10;
+    /// let inner = DropOwned::into_inner(x);
+    /// assert_eq!(inner.elt, Box::new(10));
+    /// assert_eq!(v, vec![]);
+    /// ```
+    #[inline]
+    pub fn into_inner(slot: Self) -> T {
+        let mut manual_drop = ManuallyDrop::new(slot);
+        // SAFETY the inner `ManuallyDrop` will never get used again since we put it in the outer
+        // `ManuallyDrop` which will cause us to forget it
+        unsafe { ManuallyDrop::take(&mut manual_drop.0) }
     }
 }
 
@@ -56,10 +112,7 @@ impl<T: OwnedDroppable> DerefMut for DropOwned<T> {
 impl<T: OwnedDroppable> Drop for DropOwned<T> {
     #[inline]
     fn drop(&mut self) {
-        // SAFETY: This is safe because we only ever read this instance once and
-        // that is here and we know that the location is valid for reads,
-        // initialized and aligned.
-        let owned = unsafe { ((&mut self.0) as *mut ManuallyDrop<T>).read() };
-        ManuallyDrop::into_inner(owned).drop_owned();
+        // SAFETY this `ManuallyDrop` will never get used again since we are inside the destructor
+        unsafe { ManuallyDrop::take(&mut self.0) }.drop_owned();
     }
 }
